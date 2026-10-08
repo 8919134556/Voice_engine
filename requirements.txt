@@ -1,0 +1,7 @@
+# Project dependencies — kept deliberately small.
+# torch is preinstalled on Google Colab; on Windows pip installs the CPU build.
+torch
+numpy
+soundfile   # reads/writes WAV files (works the same on Windows, Linux, Colab)
+scipy       # high-quality resampling (e.g. 44.1 kHz -> 16 kHz)
+matplotlib  # waveform / spectrogram plots (Phase 2)
