@@ -17,7 +17,6 @@ Everything heavy is reused from Phase 3; this file only adds the decision step.
 """
 
 from dataclasses import dataclass
-from pathlib import Path
 
 import torch
 
@@ -78,22 +77,21 @@ class SpeakerVerifier:
 
 def create_verifier(checkpoint=None, seed=ENCODER_SEED, device=None, n_frames=None):
     """
-    Build a SpeakerVerifier around the Phase 3 SpeakerEncoder.
+    Build a SpeakerVerifier.
 
-    checkpoint=None -> UNTRAINED encoder with random weights. The seed makes the
-                       weights identical to Phase 3's (seed 0), so results are repeatable.
-    checkpoint=path -> load trained weights (.pt file) from a future training phase.
+    checkpoint=None -> the Phase 3 UNTRAINED SpeakerEncoder (random weights). The seed makes
+                       the weights identical to Phase 3's, so results are repeatable.
+    checkpoint=path -> the Phase 9 TRAINED encoder from a training checkpoint
+                       (e.g. outputs/checkpoints/best_model.pt). A missing file raises
+                       CheckpointNotFoundError — never a silent fallback to random weights.
     """
     device = device or get_device()
-    torch.manual_seed(seed)
-    encoder = SpeakerEncoder()
-
-    trained = False
     if checkpoint:
-        state = torch.load(Path(checkpoint), map_location=device)
-        encoder.load_state_dict(state)
-        trained = True
-    return SpeakerVerifier(encoder, device, trained=trained, n_frames=n_frames)
+        from src.training.utils import load_speaker_encoder  # imported only when needed
+        return SpeakerVerifier(load_speaker_encoder(checkpoint, device), device,
+                               trained=True, n_frames=n_frames)
+    torch.manual_seed(seed)
+    return SpeakerVerifier(SpeakerEncoder(), device, trained=False, n_frames=n_frames)
 
 
 UNTRAINED_WARNING = "DEMONSTRATION ONLY - encoder is not trained."

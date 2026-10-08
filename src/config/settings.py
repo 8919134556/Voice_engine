@@ -44,6 +44,24 @@ VERIFICATION_THRESHOLD = 0.70
 DEFAULT_LANGUAGE = "en"
 
 # ---------------------------------------------------------------------------
+# Speaker-encoder training (Phase 9) — sensible starting points, NOT tuned values
+# ---------------------------------------------------------------------------
+BATCH_SIZE = 32
+LEARNING_RATE = 1e-3
+WEIGHT_DECAY = 1e-4
+EPOCHS = 25
+SEGMENT_FRAMES = 200          # training crops: 200 frames = 2 s of audio
+TRAIN_FRACTION = 0.70         # split per speaker, by recording (no file in two splits)
+VAL_FRACTION = 0.15
+TEST_FRACTION = 0.15
+SPLIT_SEED = 42
+TRAINING_SEED = 0
+MIN_SPEAKERS_FOR_TRAINING = 2  # a classifier needs at least two classes
+TRAINING_OUTPUT_DIR = OUTPUTS_DIR / "training"
+CHECKPOINT_DIR = OUTPUTS_DIR / "checkpoints"
+BEST_CHECKPOINT = CHECKPOINT_DIR / "best_model.pt"
+
+# ---------------------------------------------------------------------------
 # Logging (Phase 8)
 # ---------------------------------------------------------------------------
 LOG_LEVEL = "INFO"
@@ -63,5 +81,10 @@ def validate_settings() -> None:
         raise ValueError("HOP_LENGTH must not be larger than N_FFT.")
     if not -1.0 <= VERIFICATION_THRESHOLD <= 1.0:
         raise ValueError("VERIFICATION_THRESHOLD must be between -1 and 1 (cosine similarity).")
+    if abs(TRAIN_FRACTION + VAL_FRACTION + TEST_FRACTION - 1.0) > 1e-6:
+        raise ValueError("TRAIN_FRACTION + VAL_FRACTION + TEST_FRACTION must add up to 1.0.")
+    for name, value in {"BATCH_SIZE": BATCH_SIZE, "EPOCHS": EPOCHS, "SEGMENT_FRAMES": SEGMENT_FRAMES}.items():
+        if not isinstance(value, int) or value <= 0:
+            raise ValueError(f"Setting {name} must be a positive integer, got {value!r}.")
     if not DEFAULT_LANGUAGE or DEFAULT_LANGUAGE != DEFAULT_LANGUAGE.strip().lower():
         raise ValueError("DEFAULT_LANGUAGE must be a lowercase language code such as 'en'.")

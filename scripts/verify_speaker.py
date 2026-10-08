@@ -4,7 +4,7 @@ Phase 4 — compare two WAV files: same speaker or not?
 Usage (run from the project root):
     python scripts/verify_speaker.py dataset/speaker_01/audio_001.wav dataset/speaker_01/audio_002.wav
     python scripts/verify_speaker.py A.wav B.wav --threshold 0.9
-    python scripts/verify_speaker.py A.wav B.wav --checkpoint models/encoder.pt   # future: trained weights
+    python scripts/verify_speaker.py A.wav B.wav --checkpoint outputs/checkpoints/best_model.pt --threshold 0.6
 """
 
 import argparse
@@ -31,7 +31,7 @@ def parse_args():
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
                         help=f"Decision threshold (default {DEFAULT_THRESHOLD}, an educational example)")
     parser.add_argument("--seed", type=int, default=ENCODER_SEED, help="Seed for the untrained weights (same as Phase 3)")
-    parser.add_argument("--checkpoint", help="Path to trained encoder weights (.pt) — none exist yet")
+    parser.add_argument("--checkpoint", help="Trained encoder checkpoint, e.g. outputs/checkpoints/best_model.pt (Phase 9)")
     return parser.parse_args()
 
 
@@ -42,7 +42,11 @@ def main():
             print(f"[ERROR] File not found: {path}")
             return 1
 
-    verifier = create_verifier(checkpoint=args.checkpoint, seed=args.seed)
+    try:
+        verifier = create_verifier(checkpoint=args.checkpoint, seed=args.seed)
+    except FileNotFoundError as exc:  # includes CheckpointNotFoundError
+        print(f"[ERROR] {exc}")
+        return 1
 
     try:
         emb_a = verifier.generate_embedding(args.audio_a)

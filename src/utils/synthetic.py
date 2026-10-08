@@ -16,10 +16,11 @@ from src.config.settings import EMBEDDING_DIMENSION, SAMPLE_RATE
 
 
 def synthetic_speech(seconds: float = 3.0, f0: float = 120.0, seed: int = 0,
-                     sample_rate: int = SAMPLE_RATE) -> np.ndarray:
+                     sample_rate: int = SAMPLE_RATE, tilt: float = 1.0) -> np.ndarray:
     """
     A mono float32 signal: silence, a vowel-like buzz at pitch `f0`, a short hiss,
     another buzz, silence. Different f0 values give different "fake speakers".
+    `tilt` controls the timbre: harmonic k has amplitude 1/k**tilt (higher = darker/softer).
     """
     rng = np.random.default_rng(seed)
 
@@ -29,7 +30,7 @@ def synthetic_speech(seconds: float = 3.0, f0: float = 120.0, seed: int = 0,
     def voiced(dur, pitch, amp):
         t = np.arange(int(sample_rate * dur)) / sample_rate
         phase = 2 * np.pi * np.cumsum(pitch * (1 + 0.08 * np.sin(2 * np.pi * 3 * t))) / sample_rate
-        x = sum(np.sin(k * phase) / k for k in range(1, 20))
+        x = sum(np.sin(k * phase) / k ** tilt for k in range(1, 20))
         return amp * x / np.abs(x).max() * np.sin(np.pi * t / dur) ** 2
 
     def hiss(dur, amp):
@@ -60,6 +61,33 @@ def write_synthetic_dataset(dataset_dir: str | Path, speakers: dict[str, float] 
         folder.mkdir(parents=True, exist_ok=True)
         for i in range(1, files_per_speaker + 1):
             audio = synthetic_speech(seconds=2.5 + 0.5 * i, f0=f0 * (1 + 0.03 * i), seed=100 * s_index + i)
+            sf.write(str(folder / f"audio_{i:03d}.wav"), audio, SAMPLE_RATE, subtype="PCM_16")
+    return dataset_dir
+
+
+def write_synthetic_speaker_dataset(dataset_dir: str | Path, n_speakers: int = 6,
+                                    files_per_speaker: int = 12, seed: int = 0) -> Path:
+    """
+    A SYNTHETIC multi-speaker dataset for testing the training pipeline:
+    dataset_dir/speaker_001 ... speaker_00N, each with `files_per_speaker` WAVs.
+
+    Every fake speaker has its own base pitch and timbre; every recording varies
+    pitch (+-6 %), timbre, length and background noise, so the task is not trivial.
+    It is NOT real speech — results on it only show that the pipeline works.
+    """
+    dataset_dir = Path(dataset_dir)
+    rng = np.random.default_rng(seed)
+    base_f0 = np.linspace(95, 240, n_speakers)
+    base_tilt = rng.uniform(0.6, 1.6, n_speakers)
+    for s in range(n_speakers):
+        folder = dataset_dir / f"speaker_{s + 1:03d}"
+        folder.mkdir(parents=True, exist_ok=True)
+        for i in range(1, files_per_speaker + 1):
+            f0 = base_f0[s] * rng.uniform(0.94, 1.06)
+            tilt = base_tilt[s] + rng.uniform(-0.1, 0.1)
+            audio = synthetic_speech(seconds=rng.uniform(2.5, 4.5), f0=f0, tilt=tilt,
+                                     seed=int(rng.integers(1_000_000)))
+            audio = audio + rng.uniform(0.002, 0.02) * rng.normal(size=len(audio)).astype(np.float32)
             sf.write(str(folder / f"audio_{i:03d}.wav"), audio, SAMPLE_RATE, subtype="PCM_16")
     return dataset_dir
 

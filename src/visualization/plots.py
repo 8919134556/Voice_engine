@@ -147,3 +147,57 @@ def plot_pair_scores(rows, threshold, title="Pair similarity scores", save_path=
               bbox_to_anchor=(0.5, -0.12), ncol=3, frameon=False)
     ax.set_title(title)
     return _finish(fig, save_path)
+
+
+# ---------------------------------------------------------------------------
+# Phase 9: training + evaluation plots
+# ---------------------------------------------------------------------------
+
+def plot_training_history(history, save_path=None):
+    """Two panels: train/val loss and train/val accuracy per epoch."""
+    epochs = range(1, len(history["train_loss"]) + 1)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+    ax1.plot(epochs, history["train_loss"], marker="o", label="training loss")
+    ax1.plot(epochs, history["val_loss"], marker="o", label="validation loss")
+    ax1.set_xlabel("epoch"); ax1.set_ylabel("cross-entropy loss"); ax1.set_title("Loss"); ax1.legend()
+    ax2.plot(epochs, history["train_accuracy"], marker="o", label="training accuracy")
+    ax2.plot(epochs, history["val_accuracy"], marker="o", label="validation accuracy")
+    ax2.set_xlabel("epoch"); ax2.set_ylabel("accuracy"); ax2.set_ylim(-0.02, 1.02)
+    ax2.set_title("Speaker classification accuracy"); ax2.legend()
+    return _finish(fig, save_path)
+
+
+def plot_similarity_distributions(genuine, impostor, threshold_rows=None, eer_threshold=None,
+                                  title="Genuine vs impostor cosine similarity", save_path=None):
+    """Left: histograms of genuine/impostor scores. Right (optional): FAR and FRR vs threshold."""
+    panels = 2 if threshold_rows else 1
+    fig, axes = plt.subplots(1, panels, figsize=(6 * panels, 4))
+    ax = axes[0] if panels == 2 else axes
+    bins = np.linspace(-1, 1, 41)
+    ax.hist(genuine, bins=bins, alpha=0.6, label=f"genuine pairs ({len(genuine)})")
+    ax.hist(impostor, bins=bins, alpha=0.6, label=f"impostor pairs ({len(impostor)})")
+    if eer_threshold is not None:
+        ax.axvline(eer_threshold, color="red", linestyle="--", label=f"EER threshold {eer_threshold:.2f}")
+    ax.set_xlabel("cosine similarity"); ax.set_ylabel("pairs"); ax.set_title(title); ax.legend()
+    if threshold_rows:
+        t = [r["threshold"] for r in threshold_rows]
+        axes[1].plot(t, [r["far"] for r in threshold_rows], marker="o", label="FAR (false accepts)")
+        axes[1].plot(t, [r["frr"] for r in threshold_rows], marker="o", label="FRR (false rejects)")
+        axes[1].set_xlabel("threshold"); axes[1].set_ylabel("rate"); axes[1].set_ylim(-0.02, 1.02)
+        axes[1].set_title("Error rates vs threshold"); axes[1].legend()
+    return _finish(fig, save_path)
+
+
+def plot_speaker_embeddings_pca(embeddings, labels, label_names=None,
+                                title="Speaker embeddings (PCA to 2-D)", save_path=None):
+    """One point per recording, coloured by speaker. Qualitative only."""
+    points = pca_2d(embeddings)
+    labels = np.asarray(labels)
+    fig, ax = plt.subplots(figsize=(7, 6))
+    for label in sorted(set(labels.tolist())):
+        mask = labels == label
+        name = label_names[label] if label_names else f"speaker {label}"
+        ax.scatter(points[mask, 0], points[mask, 1], s=50, label=name)
+    ax.set_xlabel("PCA component 1"); ax.set_ylabel("PCA component 2"); ax.set_title(title)
+    ax.legend(fontsize=8, loc="best")
+    return _finish(fig, save_path)

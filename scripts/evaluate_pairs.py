@@ -43,7 +43,7 @@ def parse_args():
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
                         help=f"Decision threshold (default {DEFAULT_THRESHOLD}, an educational example)")
     parser.add_argument("--seed", type=int, default=ENCODER_SEED, help="Seed for the untrained weights (same as Phase 3)")
-    parser.add_argument("--checkpoint", help="Path to trained encoder weights (.pt) — none exist yet")
+    parser.add_argument("--checkpoint", help="Trained encoder checkpoint, e.g. outputs/checkpoints/best_model.pt (Phase 9)")
     return parser.parse_args()
 
 
@@ -89,7 +89,11 @@ def main():
         print(f"[ERROR] Need at least 2 WAV files under {dataset_dir} to form a pair.")
         return 1
 
-    verifier = create_verifier(checkpoint=args.checkpoint, seed=args.seed)
+    try:
+        verifier = create_verifier(checkpoint=args.checkpoint, seed=args.seed)
+    except FileNotFoundError as exc:  # includes CheckpointNotFoundError
+        print(f"[ERROR] {exc}")
+        return 1
     if not verifier.trained:
         print(f"*** {UNTRAINED_WARNING} ***\n")
 
