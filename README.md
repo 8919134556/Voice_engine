@@ -2,8 +2,8 @@
 
 A multi-speaker voice engine, built step by step with Python and PyTorch — as a learning project.
 
-**Current phase:** Phase 5 — Voice Registry
-**Current objective:** Manage multiple voice identities: each voice has a unique `voice_id`, metadata (name, optional gender, languages, description) and a reference to its embedding file, saved in `voice_profiles.json`.
+**Current phase:** Phase 6 — Multi-Voice Engine Core
+**Current objective:** One `VoiceEngine` that sits on top of the Voice Registry and lets an application list, select, switch and resolve voices by `voice_id` — with language checks and an in-memory embedding cache. **It does not generate speech yet.**
 
 ## Roadmap
 
@@ -13,8 +13,8 @@ A multi-speaker voice engine, built step by step with Python and PyTorch — as 
 | 2 | Waveform, spectrogram, audio features | ✅ done |
 | 3 | Speaker embeddings | ✅ done (untrained demo) |
 | 4 | Speaker similarity / verification | ✅ done (untrained demo) |
-| 5 | Multiple voice profiles / Voice Registry | ✅ current |
-| 6 | Multi-speaker voice engine | upcoming |
+| 5 | Multiple voice profiles / Voice Registry | ✅ done |
+| 6 | Multi-voice engine core | ✅ current |
 | 7 | Voice selection + speaker conditioning | upcoming |
 | 8 | Production-ready architecture | upcoming |
 
@@ -94,6 +94,32 @@ AUDIO B -> SpeakerEncoder -> Embedding B ─┘
 register / get / list_voices / update / remove / exists / find_by_language / find_by_gender / save / load).
 See `voice_profiles.example.json` for the file format.
 
+## Phase 6 — Multi-Voice Engine Core
+
+The **VoiceEngine** is the layer an application talks to. It manages voice *identity and selection* only —
+**it does not generate speech yet.**
+
+```
+Voice Registry ──► Voice Profile ──► Voice ID ──► Voice Engine ──► Selected Voice ──► Speaker Embedding
+ (Phase 5)          (metadata)       (identity)    (Phase 6)        (voice_id, profile,   (128-D, cached
+                                                                     embedding)            in memory)
+```
+
+**One engine, many voices.** There is no `MaleVoiceEngine`, `HindiVoiceEngine`, etc. — gender and language are
+just metadata on a VoiceProfile. A single engine manages `voice_001`, `voice_002`, `voice_003`, `voice_004`, …
+and switching voices only changes which `voice_id` is selected.
+
+```python
+from src.voice_registry import VoiceRegistry
+from src.engine import VoiceEngine, VoiceRequest
+
+engine = VoiceEngine(VoiceRegistry("voice_profiles.json"), default_voice_id="voice_001")
+selected = engine.resolve(VoiceRequest(voice_id="voice_002", language="hi"))
+# -> SelectedVoice(voice_id, profile, embedding)  or  VoiceNotFoundError / VoiceLanguageNotSupportedError
+```
+
+`src/engine/`: `voice_engine.py` (VoiceEngine) · `request.py` (VoiceRequest, SelectedVoice) · `exceptions.py`.
+
 ## Project structure
 
 ```
@@ -108,6 +134,7 @@ Voice_engine/
 ├── src/similarity/cosine.py               # cosine similarity
 ├── src/verification/verifier.py          # SpeakerVerifier: embed, compare, threshold (Phase 4)
 ├── src/voice_registry/                   # VoiceProfile + VoiceRegistry (Phase 5)
+├── src/engine/                           # VoiceEngine, VoiceRequest, SelectedVoice (Phase 6)
 ├── src/visualization/plots.py   # waveform / spectrogram / Mel / PCA plots (matplotlib)
 ├── scripts/inspect_dataset.py   # Phase 1 entry point
 ├── scripts/analyze_audio.py     # Phase 2 entry point
@@ -116,7 +143,8 @@ Voice_engine/
 ├── scripts/evaluate_pairs.py    # Phase 4: score all genuine / impostor pairs
 ├── scripts/register_voice.py, list_voices.py, get_voice.py,
 │   update_voice.py, remove_voice.py, demo_voice_registry.py   # Phase 5
-├── tests/test_voice_registry.py # Phase 5 unit tests
+├── scripts/demo_voice_engine.py # Phase 6 demo
+├── tests/                       # unit tests (Phase 5 registry, Phase 6 engine)
 ├── voice_profiles.example.json  # example registry (fake data, committed)
 ├── voice_profiles.json          # your real registry (PRIVATE, git-ignored)
 ├── notebooks/01_audio_inspection.ipynb   # Colab: Phase 1
@@ -167,12 +195,16 @@ python scripts/get_voice.py --voice-id voice_001
 python scripts/update_voice.py --voice-id voice_001 --name "Arjun Kumar"
 python scripts/remove_voice.py --voice-id voice_001
 python -m unittest discover -s tests -v         # run the tests
+
+# Phase 6
+python scripts/demo_voice_engine.py             # fake voices in a temp folder
+python scripts/demo_voice_engine.py --registry voice_profiles.json   # your real registry (read-only)
 ```
 
 ## Run on Google Colab
 
 Open `notebooks/01_audio_inspection.ipynb` (Phase 1) , `02_audio_analysis.ipynb` (Phase 2), `03_speaker_embeddings.ipynb` (Phase 3) or `04_speaker_verification.ipynb` (Phase 4) in Colab
-(File → Open notebook → GitHub → `8919134556/Voice_engine`) and run the cells top to bottom. No GPU is needed for Phases 1–5; Phases 3–4 use CUDA automatically if one is available. Phase 5 (registry) is pure Python.
+(File → Open notebook → GitHub → `8919134556/Voice_engine`) and run the cells top to bottom. No GPU is needed for Phases 1–6; Phases 3–4 use CUDA automatically if one is available. Phases 5–6 are pure Python/NumPy.
 Your recordings are read from private Google Drive (`MyDrive/voice_engine/dataset/`) or uploaded for the session.
 
 ## Data privacy
