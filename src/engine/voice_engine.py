@@ -1,46 +1,94 @@
 """
-voice_engine.py — ONE engine that manages MANY voices.
+voice_engine.py — ONE engine that manages MANY voices. The facade applications use.
 
     Application
          │  VoiceRequest(voice_id="voice_002", language="hi")
          ▼
-    VoiceEngine ──────► VoiceRegistry (Phase 5: the only place voices are stored)
+    VoiceEngine ──────► VoiceProvider (today: the Phase 5 VoiceRegistry, JSON + .npy)
          │                    │
          │               VoiceProfile ──► embedding_path ──► .npy file
          │                                                       │
          │◄──────────── embedding cache (in memory) ◄────────────┘
          ▼
-    SelectedVoice (voice_id, profile, embedding)
+    SelectedVoice (voice_id, profile, embedding)  ──►  engine.condition(...)  ──►  VoiceConditioning
 
-The engine does NOT generate audio. It only decides WHICH voice is active and
-hands out that voice's profile + speaker embedding.
+Lifecycle (Phase 8):
+    create engine -> (registry already loaded) -> validate configuration -> select default voice
+    -> load an embedding only when first needed (lazy) -> condition on request -> return representation
+
+The engine does NOT generate audio, does NOT store voices itself, does NOT
+compute embeddings and does NOT verify speakers. Those are separate components.
 """
+
+from pathlib import Path
 
 import numpy as np
 
+from src.config.settings import EMBEDDING_DIMENSION, REGISTRY_FILE, validate_settings
+from src.utils.logging import get_logger
 from src.voice_registry import VoiceProfile, VoiceRegistry
 
-from .exceptions import VoiceLanguageNotSupportedError, VoiceNotFoundError
+from .exceptions import ConfigurationError, VoiceLanguageNotSupportedError, VoiceNotFoundError
+from .interfaces import VoiceProvider
 from .request import SelectedVoice, VoiceRequest
+
+logger = get_logger(__name__)
 
 
 class VoiceEngine:
 
-    def __init__(self, registry: VoiceRegistry, default_voice_id: str | None = None):
+    def __init__(self, registry: VoiceProvider, default_voice_id: str | None = None,
+                 embedding_dim: int = EMBEDDING_DIMENSION):
         """
-        registry:         the Phase 5 VoiceRegistry. The engine keeps NO copy of the voices.
+        registry:         where voices come from (any VoiceProvider; today a VoiceRegistry).
+                          The engine keeps NO copy of the voices.
         default_voice_id: optional; must exist; becomes the initially selected voice.
+        embedding_dim:    expected embedding size (from src/config/settings.py).
+
+        Initialization is lightweight: no embedding is loaded here.
         """
         self.registry = registry
+        self.embedding_dim = embedding_dim
         self._current_voice_id: str | None = None
         # voice_id -> (embedding_path it was loaded from, read-only embedding array)
         self._embedding_cache: dict[str, tuple[str, np.ndarray]] = {}
+        self._conditioner = None  # created on first use (see condition())
+
+        self._validate_configuration()
+        logger.info("VoiceEngine created: %d voice(s) available", len(self.registry.list_voices()))
 
         if default_voice_id is not None:
             self.select_voice(default_voice_id)
 
+    @classmethod
+    def from_registry_file(cls, path: str | Path = REGISTRY_FILE,
+                           default_voice_id: str | None = None) -> "VoiceEngine":
+        """Lifecycle shortcut: load the JSON registry and build the engine in one call."""
+        path = Path(path)
+        if not path.is_file():
+            raise ConfigurationError(f"Registry file not found: {path}. Register a voice first.")
+        logger.info("Loading voice registry: %s", path.name)
+        return cls(VoiceRegistry(path), default_voice_id=default_voice_id)
+
+    def _validate_configuration(self) -> None:
+        try:
+            validate_settings()
+        except ValueError as exc:
+            raise ConfigurationError(str(exc)) from exc
+        if not isinstance(self.registry, VoiceProvider):
+            raise ConfigurationError(
+                f"{type(self.registry).__name__} is not a VoiceProvider "
+                "(needs list_voices, exists, get, load_embedding, embedding_dim)."
+            )
+        provider_dim = self.registry.embedding_dim
+        if provider_dim != self.embedding_dim:
+            raise ConfigurationError(
+                f"Embedding size mismatch: provider stores {provider_dim}-D embeddings, "
+                f"engine expects {self.embedding_dim}-D (EMBEDDING_DIMENSION)."
+            )
+
     # ------------------------------------------------------------------
-    # Looking up voices (delegated to the registry)
+    # Looking up voices (delegated to the provider)
     # ------------------------------------------------------------------
 
     def list_voices(self) -> list[VoiceProfile]:
@@ -49,8 +97,11 @@ class VoiceEngine:
 
     def get_voice(self, voice_id: str) -> VoiceProfile:
         """The VoiceProfile for `voice_id`; raises VoiceNotFoundError if it isn't registered."""
+        logger.debug("Voice lookup: %s", voice_id)
         if not self.registry.exists(voice_id):
-            raise VoiceNotFoundError(voice_id, [p.voice_id for p in self.list_voices()])
+            available = [p.voice_id for p in self.list_voices()]
+            logger.warning("Voice not found: %s", voice_id)
+            raise VoiceNotFoundError(voice_id, available)
         return self.registry.get(voice_id)
 
     # ------------------------------------------------------------------
@@ -64,12 +115,13 @@ class VoiceEngine:
         """
         profile = self.get_voice(voice_id)  # raises if unknown -> selection unchanged
         self._current_voice_id = voice_id
+        logger.info("Selected voice: %s", voice_id)
         return profile
 
     def get_current_voice(self) -> VoiceProfile | None:
         """
         The currently selected VoiceProfile, or None if no voice has been selected yet.
-        (Returns the registry's latest version, so metadata updates are visible.)
+        (Returns the provider's latest version, so metadata updates are visible.)
         """
         if self._current_voice_id is None:
             return None
@@ -87,7 +139,9 @@ class VoiceEngine:
         """Raise VoiceLanguageNotSupportedError unless `language` is in the voice's languages."""
         profile = self.get_voice(voice_id)
         if not profile.supports_language(language):
-            raise VoiceLanguageNotSupportedError(voice_id, language.strip().lower(), profile.languages)
+            code = language.strip().lower()
+            logger.warning("Language '%s' not supported by %s", code, voice_id)
+            raise VoiceLanguageNotSupportedError(voice_id, code, profile.languages)
         return profile
 
     # ------------------------------------------------------------------
@@ -96,23 +150,26 @@ class VoiceEngine:
 
     def get_embedding(self, voice_id: str) -> np.ndarray:
         """
-        The voice's 128-D speaker embedding (made in earlier phases — never generated here).
+        The voice's speaker embedding (made in earlier phases — never generated here).
 
-        First call:  read the .npy file from disk, validate it, store it in the cache.
-        Later calls: return the cached array (no disk access).
-        If the voice's embedding_path was changed with registry.update(), the cache
-        entry no longer matches and the new file is loaded.
+        First request:  voice_id -> disk (.npy) -> validate -> memory cache   ("cache miss")
+        Later requests: voice_id -> memory cache                             ("cache hit")
+        If the voice's embedding_path changed in the registry, the cache entry no
+        longer matches and the new file is loaded.
 
-        Validation (exists, loads, numeric, not empty, finite, shape (128,)) is done by
-        the Phase 5 registry -> raises InvalidEmbeddingError on a bad file.
+        Validation (exists, loads, numeric, not empty, finite, right size) is done by
+        the provider -> raises InvalidEmbeddingError on a bad file.
         """
         profile = self.get_voice(voice_id)
 
         cached = self._embedding_cache.get(voice_id)
         if cached is not None and cached[0] == profile.embedding_path:
+            logger.info("Embedding cache hit: %s", voice_id)
             return cached[1]
 
-        embedding = self.registry.load_embedding(voice_id)  # validated (128,) float32 array
+        logger.info("Embedding cache miss: %s", voice_id)
+        logger.info("Loading embedding: %s", voice_id)          # the id only, never the numbers
+        embedding = self.registry.load_embedding(voice_id)
         embedding.setflags(write=False)  # shared from the cache -> protect it from accidental edits
         self._embedding_cache[voice_id] = (profile.embedding_path, embedding)
         return embedding
@@ -128,7 +185,7 @@ class VoiceEngine:
             self._embedding_cache.pop(voice_id, None)
 
     # ------------------------------------------------------------------
-    # The main entry point for applications
+    # The main entry points for applications
     # ------------------------------------------------------------------
 
     def resolve(self, request: VoiceRequest) -> SelectedVoice:
@@ -149,6 +206,81 @@ class VoiceEngine:
         self.select_voice(request.voice_id)                              # 5
         return SelectedVoice(request.voice_id, profile, embedding, request.language)  # 6
 
+    def condition(self, target: str | VoiceRequest | None = None):
+        """
+        Facade for Phase 7: get a VoiceConditioning without touching conditioning internals.
+          condition()                  -> the currently selected voice
+          condition("voice_001")       -> that voice (selection unchanged)
+          condition(VoiceRequest(...)) -> resolve (checks + select), then condition
+        The work is done by a VoiceConditioner (separate responsibility), created on first use.
+        """
+        if self._conditioner is None:
+            # Imported here because src.conditioning itself imports src.engine.
+            from src.conditioning import VoiceConditioner
+            self._conditioner = VoiceConditioner(self, expected_dim=self.embedding_dim)
+        if target is None:
+            return self._conditioner.condition_current()
+        if isinstance(target, VoiceRequest):
+            return self._conditioner.condition_request(target)
+        return self._conditioner.condition(target)
+
+    # ------------------------------------------------------------------
+    # Health + info (plain Python dicts; no web endpoint)
+    # ------------------------------------------------------------------
+
+    def health_check(self, check_embeddings: bool = True) -> dict:
+        """
+        Check that the engine can actually serve its voices:
+          - the provider is reachable (list_voices works)
+          - every profile is a VoiceProfile with a non-empty embedding_path
+          - (optional) every embedding file loads, is finite and has the right size
+
+        status: "ok"       everything usable
+                "degraded" some voices have problems (listed in "problems")
+                "error"    the provider itself failed
+        The cache is not touched, so a health check never changes engine state.
+        """
+        try:
+            profiles = self.registry.list_voices()
+        except Exception as exc:  # report it instead of crashing: that's the point of a health check
+            logger.error("Health check: provider not accessible: %s", exc)
+            return {"status": "error", "voices": 0, "valid_embeddings": 0,
+                    "problems": {"provider": f"{type(exc).__name__}: {exc}"}}
+
+        problems: dict[str, str] = {}
+        valid = 0
+        for profile in profiles:
+            if not isinstance(profile, VoiceProfile) or not profile.embedding_path:
+                problems[getattr(profile, "voice_id", "?")] = "invalid profile structure"
+                continue
+            if not check_embeddings:
+                continue
+            try:
+                embedding = self.registry.load_embedding(profile.voice_id)
+                if embedding.shape != (self.embedding_dim,):
+                    raise ValueError(f"shape {embedding.shape}, expected ({self.embedding_dim},)")
+                valid += 1
+            except Exception as exc:
+                problems[profile.voice_id] = f"{type(exc).__name__}: {exc}"
+
+        status = "ok" if not problems else "degraded"
+        result = {"status": status, "voices": len(profiles),
+                  "valid_embeddings": valid if check_embeddings else None, "problems": problems}
+        log = logger.info if status == "ok" else logger.warning
+        log("Health check: %s (%d voices, %d problem(s))", status, len(profiles), len(problems))
+        return result
+
+    def info(self) -> dict:
+        """A small summary of the engine's state."""
+        return {
+            "engine": type(self).__name__,
+            "provider": type(self.registry).__name__,
+            "embedding_dimension": self.embedding_dim,
+            "registered_voices": len(self.registry.list_voices()),
+            "current_voice": self._current_voice_id,
+            "cached_embeddings": sorted(self._embedding_cache),
+        }
+
     def __repr__(self) -> str:
-        return (f"VoiceEngine(voices={len(self.registry)}, current={self._current_voice_id!r}, "
+        return (f"VoiceEngine(voices={len(self.registry.list_voices())}, current={self._current_voice_id!r}, "
                 f"cached={sorted(self._embedding_cache)})")

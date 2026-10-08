@@ -15,6 +15,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.config.settings import ENCODER_SEED  # noqa: E402
 from src.verification.verifier import (  # noqa: E402
     DEFAULT_THRESHOLD,
     UNTRAINED_WARNING,
@@ -29,7 +30,7 @@ def parse_args():
     parser.add_argument("audio_b", help="Second WAV file")
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
                         help=f"Decision threshold (default {DEFAULT_THRESHOLD}, an educational example)")
-    parser.add_argument("--seed", type=int, default=0, help="Seed for the untrained weights (same as Phase 3)")
+    parser.add_argument("--seed", type=int, default=ENCODER_SEED, help="Seed for the untrained weights (same as Phase 3)")
     parser.add_argument("--checkpoint", help="Path to trained encoder weights (.pt) — none exist yet")
     return parser.parse_args()
 

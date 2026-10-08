@@ -28,6 +28,11 @@ class VoiceNotFoundError(VoiceEngineError, RegistryVoiceNotFoundError):
         super().__init__(message)
 
 
+class ConfigurationError(VoiceEngineError):
+    """The engine was set up inconsistently, e.g. a provider with 256-D embeddings
+    while the project is configured for 128-D."""
+
+
 class VoiceLanguageNotSupportedError(VoiceEngineError):
     """The requested language is not in the voice's `languages` metadata."""
 

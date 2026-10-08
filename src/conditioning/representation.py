@@ -11,7 +11,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-EXPECTED_DIM = 128
+from src.config.settings import EMBEDDING_DIMENSION
+
+EXPECTED_DIM = EMBEDDING_DIMENSION
 
 
 @dataclass(frozen=True)

@@ -21,13 +21,14 @@ from pathlib import Path
 
 import torch
 
+from src.config.settings import ENCODER_SEED, VERIFICATION_THRESHOLD
 from src.embeddings.generate_embeddings import embed_file
 from src.models.speaker_encoder import SpeakerEncoder, get_device
 from src.similarity.cosine import cosine_similarity
 
 # EDUCATIONAL EXAMPLE ONLY. A real threshold must be chosen from validation data
 # (genuine + impostor pairs) for a specific trained encoder.
-DEFAULT_THRESHOLD = 0.70
+DEFAULT_THRESHOLD = VERIFICATION_THRESHOLD
 
 
 @dataclass
@@ -75,7 +76,7 @@ class SpeakerVerifier:
         return self.verify(self.generate_embedding(path_a), self.generate_embedding(path_b), threshold)
 
 
-def create_verifier(checkpoint=None, seed=0, device=None, n_frames=None):
+def create_verifier(checkpoint=None, seed=ENCODER_SEED, device=None, n_frames=None):
     """
     Build a SpeakerVerifier around the Phase 3 SpeakerEncoder.
 
@@ -85,7 +86,7 @@ def create_verifier(checkpoint=None, seed=0, device=None, n_frames=None):
     """
     device = device or get_device()
     torch.manual_seed(seed)
-    encoder = SpeakerEncoder(embedding_dim=128)
+    encoder = SpeakerEncoder()
 
     trained = False
     if checkpoint:

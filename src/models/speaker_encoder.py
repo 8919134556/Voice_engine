@@ -17,12 +17,12 @@ speaking until the network has been trained on many speakers (a later phase).
 import torch
 from torch import nn
 
-N_MELS = 80
+from src.config.settings import EMBEDDING_DIMENSION, N_MELS
 
 
 class SpeakerEncoder(nn.Module):
 
-    def __init__(self, embedding_dim=128, n_mels=N_MELS):
+    def __init__(self, embedding_dim=EMBEDDING_DIMENSION, n_mels=N_MELS):
         super().__init__()
 
         # Conv2D #1: slides 16 small 3x3 filters over the Mel "image".

@@ -11,10 +11,11 @@ from pathlib import Path
 
 import torch
 
+from src.config.settings import MIN_DURATION_SEC  # shorter than this is "unusually short"
+
 from .loader import TARGET_SAMPLE_RATE, load_audio
 
 # Thresholds for the quality checks. Tweak these if they don't suit your recordings.
-MIN_DURATION_SEC = 1.0    # shorter than this is "unusually short" for a speech clip
 SILENCE_PEAK = 1e-3       # loudest sample below this -> the file is basically silent
 CLIPPING_PEAK = 0.999     # loudest sample at/above this -> the recording probably clipped
 

@@ -3,7 +3,7 @@ Phase 1 — inspect every WAV recording in the dataset.
 
 Usage (run from the project root):
     python scripts/inspect_dataset.py
-    python scripts/inspect_dataset.py --dataset /content/drive/MyDrive/voice_engine/dataset
+    python scripts/inspect_dataset.py --dataset <path-to-your-private-dataset>
     python scripts/inspect_dataset.py --convert      # also write mono 16 kHz copies to dataset_16k/
 
 Exit code is 0 when everything loaded fine, 1 otherwise.

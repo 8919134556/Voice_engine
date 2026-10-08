@@ -8,7 +8,7 @@ Phase 4 — score every pair of recordings in the dataset.
 Usage (run from the project root):
     python scripts/evaluate_pairs.py
     python scripts/evaluate_pairs.py --threshold 0.9
-    python scripts/evaluate_pairs.py --dataset /content/drive/MyDrive/voice_engine/dataset
+    python scripts/evaluate_pairs.py --dataset <path-to-your-private-dataset>
 
 Output: table in the terminal + outputs/phase4/pair_scores.png (git-ignored)
 """
@@ -27,6 +27,7 @@ import matplotlib  # noqa: E402
 matplotlib.use("Agg")  # save plots to files, no windows
 
 from src.audio.loader import find_dataset_dir, list_audio_files, list_speakers  # noqa: E402
+from src.config.settings import ENCODER_SEED  # noqa: E402
 from src.verification.verifier import (  # noqa: E402
     DEFAULT_THRESHOLD,
     UNTRAINED_WARNING,
@@ -41,7 +42,7 @@ def parse_args():
     parser.add_argument("--dataset", help="Path to the dataset folder (default: ./dataset)")
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
                         help=f"Decision threshold (default {DEFAULT_THRESHOLD}, an educational example)")
-    parser.add_argument("--seed", type=int, default=0, help="Seed for the untrained weights (same as Phase 3)")
+    parser.add_argument("--seed", type=int, default=ENCODER_SEED, help="Seed for the untrained weights (same as Phase 3)")
     parser.add_argument("--checkpoint", help="Path to trained encoder weights (.pt) — none exist yet")
     return parser.parse_args()
 

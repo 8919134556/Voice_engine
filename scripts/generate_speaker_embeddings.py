@@ -4,7 +4,7 @@ Phase 3 — generate (UNTRAINED) speaker embeddings for one speaker folder.
 Usage (run from the project root):
     python scripts/generate_speaker_embeddings.py
     python scripts/generate_speaker_embeddings.py --speaker speaker_02
-    python scripts/generate_speaker_embeddings.py --dataset /content/drive/MyDrive/voice_engine/dataset
+    python scripts/generate_speaker_embeddings.py --dataset <path-to-your-private-dataset>
     python scripts/generate_speaker_embeddings.py --seed 1        # different random network
     python scripts/generate_speaker_embeddings.py --frames 300    # crop/pad every input to 3 s
 
@@ -28,6 +28,7 @@ matplotlib.use("Agg")  # save plots to files, no windows
 import torch  # noqa: E402
 
 from src.audio.loader import TARGET_SAMPLE_RATE, find_dataset_dir  # noqa: E402
+from src.config.settings import ENCODER_SEED  # noqa: E402
 from src.embeddings.generate_embeddings import (  # noqa: E402
     embed_mel,
     generate_for_speaker,
@@ -43,7 +44,7 @@ def parse_args():
     parser.add_argument("--dataset", help="Path to the dataset folder (default: ./dataset)")
     parser.add_argument("--speaker", default="speaker_01", help="Speaker folder (default: speaker_01)")
     parser.add_argument("--out", default=str(PROJECT_ROOT / "embeddings"), help="Where to save .npy files")
-    parser.add_argument("--seed", type=int, default=0, help="Random seed for the untrained weights")
+    parser.add_argument("--seed", type=int, default=ENCODER_SEED, help="Random seed for the untrained weights")
     parser.add_argument("--frames", type=int, help="Crop/pad every Mel spectrogram to this many frames")
     return parser.parse_args()
 
@@ -74,7 +75,7 @@ def main():
     #    so you get the same embeddings every time you run the script.
     torch.manual_seed(args.seed)
     device = get_device()
-    model = SpeakerEncoder(embedding_dim=128).to(device)
+    model = SpeakerEncoder().to(device)   # size from src/config/settings.py
 
     print(f"Device: {device}" + (f" ({torch.cuda.get_device_name(0)})" if device.type == "cuda" else ""))
     print(f"Model:  SpeakerEncoder, {count_parameters(model):,} parameters")

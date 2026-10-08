@@ -24,10 +24,12 @@ from pathlib import Path
 
 import numpy as np
 
+from src.config.settings import EMBEDDING_DIMENSION, REGISTRY_FILE
+
 from .profile import VoiceProfile, now_iso
 
-EMBEDDING_DIM = 128
-DEFAULT_REGISTRY_FILE = "voice_profiles.json"
+EMBEDDING_DIM = EMBEDDING_DIMENSION
+DEFAULT_REGISTRY_FILE = REGISTRY_FILE.name   # "voice_profiles.json"
 
 # Readable field order inside voice_profiles.json.
 JSON_FIELD_ORDER = ["name", "gender", "languages", "description", "embedding_path",

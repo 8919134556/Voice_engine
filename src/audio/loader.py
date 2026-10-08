@@ -19,14 +19,13 @@ import soundfile as sf
 import torch
 from scipy.signal import resample_poly
 
+from src.config.settings import DATASET_DIR, PROJECT_ROOT, SAMPLE_RATE
+
 # 16 kHz mono is the standard input format for speech models
-# (speaker embeddings, ASR, many TTS systems). We'll rely on it in later phases.
-TARGET_SAMPLE_RATE = 16000
+# (speaker embeddings, ASR, many TTS systems). Value lives in src/config/settings.py.
+TARGET_SAMPLE_RATE = SAMPLE_RATE
 
 AUDIO_EXTENSIONS = {".wav"}
-
-# Repo root = two folders up from this file: src/audio/loader.py -> Voice_engine/
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def find_dataset_dir(dataset_dir=None):
@@ -38,7 +37,7 @@ def find_dataset_dir(dataset_dir=None):
     Raises FileNotFoundError if the folder does not exist.
     """
     if dataset_dir is None:
-        dataset_dir = os.environ.get("VOICE_ENGINE_DATASET", PROJECT_ROOT / "dataset")
+        dataset_dir = os.environ.get("VOICE_ENGINE_DATASET", DATASET_DIR)
 
     path = Path(dataset_dir).expanduser().resolve()
     if not path.is_dir():

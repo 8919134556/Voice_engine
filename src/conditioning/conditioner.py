@@ -17,10 +17,13 @@ engine's cached array — it always works on a copy.
 import numpy as np
 
 from src.engine import SelectedVoice, VoiceEngine, VoiceEngineError, VoiceRequest
+from src.utils.logging import get_logger
 
 from .representation import EXPECTED_DIM, VoiceConditioning
 
 NORM_TOLERANCE = 1e-5
+
+logger = get_logger(__name__)
 
 
 class ConditioningError(VoiceEngineError, ValueError):
@@ -122,6 +125,7 @@ class VoiceConditioner:
         vector = self.projector.project(l2_normalize(embedding))
         vector.setflags(write=False)   # the conditioning result is read-only too
         norm = float(np.linalg.norm(vector))
+        logger.info("Conditioned voice: %s (dimension %d, L2 norm %.4f)", voice_id, vector.shape[0], norm)
         return VoiceConditioning(
             voice_id=voice_id,
             embedding=vector,

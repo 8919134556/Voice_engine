@@ -1,248 +1,214 @@
 # Voice Engine
 
-A multi-speaker voice engine, built step by step with Python and PyTorch — as a learning project.
+An educational, step-by-step **multi-voice engine** built with Python, NumPy and PyTorch.
 
-**Current phase:** Phase 7 — Voice Conditioning
-**Current objective:** Turn the selected voice's speaker embedding into a validated, L2-normalized `VoiceConditioning` representation, ready for a *future* neural voice model. **No speech is generated.**
+> **This project currently does NOT synthesize speech.** It manages voice identities and prepares a
+> speaker representation (*conditioning*) that a future voice model could use. The speaker encoder is
+> **untrained**, so its embeddings demonstrate the architecture — they do not recognize real speakers.
 
-## Roadmap
+## Purpose
+
+Learn, phase by phase, how a multi-voice system is organized:
+
+- how audio becomes data (waveform → spectrogram → Mel spectrogram),
+- how a neural network turns speech into a **speaker embedding**,
+- how embeddings are compared (**verification**),
+- how many voices are managed by **one engine** through a **registry** keyed by `voice_id`,
+- how the selected voice is prepared (**conditioning**) for a future speech model.
+
+## Architecture
+
+```
+Audio
+  ↓
+Speaker Encoder          src/models/speaker_encoder.py      (untrained, 128-D output)
+  ↓
+Speaker Embedding        src/embeddings/                    (.npy files, private)
+  ↓
+Voice Registry           src/voice_registry/                (voice_profiles.json + .npy paths)
+  ↓
+Voice Engine             src/engine/                        (one engine, many voices)
+  ↓
+Voice Conditioning       src/conditioning/                  (validated, L2-normalized copy)
+  ↓
+Future Voice Model       (not implemented)
+```
+
+How the components work together at runtime:
+
+```
+                    Application
+                         │
+                         ▼
+               VoiceEngine  (facade: list / select / resolve / condition / health_check / info)
+                         │
+              ┌──────────┴──────────┐
+              ▼                     ▼
+   VoiceProvider (interface)   VoiceConditioner
+     = VoiceRegistry today           │
+              │                      ▼
+              ▼               Speaker Embedding (lazy-loaded, cached in memory)
+        VoiceProfile                 │
+              └──────────┬───────────┘
+                         ▼
+                (Future Voice Model) ─► (Future Audio)
+```
+
+| Component | Responsibility | Location |
+|---|---|---|
+| `VoiceRegistry` | storage + metadata management | `src/voice_registry/` |
+| `VoiceEngine` | orchestration: lookup, selection, cache, requests | `src/engine/` |
+| `VoiceConditioner` | prepare the speaker representation | `src/conditioning/` |
+| `SpeakerEncoder` | generate embeddings from audio | `src/models/`, `src/embeddings/` |
+| Verification | compare speakers | `src/verification/`, `src/similarity/` |
+| Settings | all important constants (sample rate, 128-D, paths, …) | `src/config/settings.py` |
+| Logging | standard `logging`; logs voice ids, never audio or raw embeddings | `src/utils/logging.py` |
+
+**One engine, many voices.** There is no `MaleVoiceEngine` or `HindiVoiceEngine`. One `VoiceEngine` manages
+`voice_001 … voice_005 …`; gender and languages are only metadata on each `VoiceProfile`. The identity is the `voice_id`.
+
+**Engine lifecycle:** create engine → load registry → validate configuration → select default voice →
+load an embedding only when first needed (cache: first request disk → memory, later requests memory) →
+condition the selected voice → return the representation.
+
+**`VoiceProvider`** is a small Protocol (`list_voices`, `exists`, `get`, `load_embedding`, `embedding_dim`).
+The JSON registry satisfies it today; a database- or API-backed store could replace it later without changing the engine.
+
+```python
+from src.engine import VoiceEngine, VoiceRequest
+
+engine = VoiceEngine.from_registry_file("voice_profiles.json", default_voice_id="voice_001")
+engine.list_voices()
+engine.select_voice("voice_002")
+conditioning = engine.condition(VoiceRequest(voice_id="voice_001", language="hi"))
+engine.health_check()   # {'status': 'ok', 'voices': 2, 'valid_embeddings': 2, 'problems': {}}
+engine.info()           # {'engine': 'VoiceEngine', 'embedding_dimension': 128, 'registered_voices': 2, ...}
+```
+
+## Phases completed
 
 | Phase | Topic | Status |
 |------:|-------|--------|
-| 1 | Audio dataset + audio inspection | ✅ done |
-| 2 | Waveform, spectrogram, audio features | ✅ done |
-| 3 | Speaker embeddings | ✅ done (untrained demo) |
-| 4 | Speaker similarity / verification | ✅ done (untrained demo) |
-| 5 | Multiple voice profiles / Voice Registry | ✅ done |
-| 6 | Multi-voice engine core | ✅ done |
-| 7 | Voice selection + speaker conditioning | ✅ current |
-| 8 | Production-ready architecture | upcoming |
-
-## Phase 1 architecture — loading & inspection
-
-```
-WAV file
-   ↓
-Audio Loader        src/audio/loader.py    (soundfile → torch.Tensor [channels, samples])
-   ↓
-PyTorch Tensor
-   ↓
-Audio Inspection    src/audio/inspect.py   (sample rate, channels, duration, quality checks)
-   ↓
-Information about the recording            scripts/inspect_dataset.py prints the report
-```
-
-## Phase 2 architecture — audio representations
-
-```
-WAV file
-   ↓  load_mono_16k()            src/audio/loader.py     (Phase 1 code: mono, 16 kHz)
-Waveform        (1, samples)                              → outputs/phase2/<name>_waveform.png
-   ↓  stft_power()               src/audio/features.py   (25 ms windows every 10 ms)
-Spectrogram     (201, frames)                             → <name>_spectrogram.png
-   ↓  mel_filterbank() @ ...     (80 triangular filters)
-Mel spectrogram (80, frames)                              → <name>_mel.png
-   ↓  extract_features()
-duration, RMS, zero-crossing rate, spectral centroid      → phase2_audio_features.csv
-```
-
-## Phase 3 architecture — speaker embeddings
-
-```
-WAV
- ↓  load_mono_16k()                    Phase 1 code
-16 kHz mono
- ↓  mel_spectrogram() + log + normalize Phase 2 code + src/embeddings/generate_embeddings.py
-Mel spectrogram [1, 1, 80, time]
- ↓  SpeakerEncoder                      src/models/speaker_encoder.py (Conv2D-ReLU-Conv2D-ReLU-Pool-Linear)
-128-D vector → L2-normalize            → embeddings/<speaker>/<file>.npy  (private, git-ignored)
- ↓  cosine_similarity()                 src/similarity/cosine.py
-similarity between recordings
-```
-
-> The encoder is **untrained** (random weights). Its vectors are an architectural demonstration,
-> **not** speaker recognition. Training on many speakers comes in a later phase.
-
-## Phase 4 architecture — speaker verification
-
-```
-AUDIO A -> SpeakerEncoder -> Embedding A ─┐
-                                          ├─> cosine similarity -> >= threshold ? -> MATCH / NOT MATCH
-AUDIO B -> SpeakerEncoder -> Embedding B ─┘
-            (Phase 3, same weights)            src/verification/verifier.py
-```
-
-> **DEMONSTRATION ONLY.** The encoder is untrained and the default threshold (0.70) is an educational
-> example. With one speaker there are no impostor pairs, so false acceptance cannot be measured.
-
-## Phase 5 architecture — voice registry
-
-```
-                 VOICE REGISTRY  (voice_profiles.json — metadata only)
-                       │
-        ┌──────────────┼──────────────┐
-        ▼              ▼              ▼
-    voice_001      voice_002      voice_003        <- voice_id = the identity
-        │              │              │
-    metadata       metadata       metadata         <- name, gender (optional), languages, description
-        │              │              │
-  embeddings/     embeddings/    embeddings/       <- 128-D vectors in separate .npy files
-  voice_001.npy   voice_002.npy  voice_003.npy
-```
-
-`src/voice_registry/profile.py` (VoiceProfile) · `src/voice_registry/registry.py` (VoiceRegistry:
-register / get / list_voices / update / remove / exists / find_by_language / find_by_gender / save / load).
-See `voice_profiles.example.json` for the file format.
-
-## Phase 6 — Multi-Voice Engine Core
-
-The **VoiceEngine** is the layer an application talks to. It manages voice *identity and selection* only —
-**it does not generate speech yet.**
-
-```
-Voice Registry ──► Voice Profile ──► Voice ID ──► Voice Engine ──► Selected Voice ──► Speaker Embedding
- (Phase 5)          (metadata)       (identity)    (Phase 6)        (voice_id, profile,   (128-D, cached
-                                                                     embedding)            in memory)
-```
-
-**One engine, many voices.** There is no `MaleVoiceEngine`, `HindiVoiceEngine`, etc. — gender and language are
-just metadata on a VoiceProfile. A single engine manages `voice_001`, `voice_002`, `voice_003`, `voice_004`, …
-and switching voices only changes which `voice_id` is selected.
-
-```python
-from src.voice_registry import VoiceRegistry
-from src.engine import VoiceEngine, VoiceRequest
-
-engine = VoiceEngine(VoiceRegistry("voice_profiles.json"), default_voice_id="voice_001")
-selected = engine.resolve(VoiceRequest(voice_id="voice_002", language="hi"))
-# -> SelectedVoice(voice_id, profile, embedding)  or  VoiceNotFoundError / VoiceLanguageNotSupportedError
-```
-
-`src/engine/`: `voice_engine.py` (VoiceEngine) · `request.py` (VoiceRequest, SelectedVoice) · `exceptions.py`.
-
-## Phase 7 — Voice Conditioning
-
-- A **Voice Profile** *identifies* a voice (voice_id + metadata).
-- A **Speaker Embedding** *represents* that voice numerically (128 numbers in a `.npy` file).
-- **Voice Conditioning** *prepares* that representation for a future neural voice model:
-  validate → copy → L2-normalize (length 1) → `VoiceConditioning(voice_id, embedding, dimension, normalized)`.
-
-```
-voice_001 → VoiceProfile → Speaker Embedding → Normalization → VoiceConditioning → (Future Voice Model)
-```
-
-```python
-from src.conditioning import VoiceConditioner
-conditioner = VoiceConditioner(engine)                       # uses the Phase 6 VoiceEngine
-c = conditioner.condition("voice_001")                        # or condition_request(VoiceRequest(...))
-c.dimension, c.normalized, c.l2_norm                          # 128, True, 1.0
-```
-
-The stored `.npy` file and the engine's cached array are never modified — conditioning works on a copy.
-**`VoiceConditioning` does not produce speech.** `EmbeddingProjector` is an empty placeholder (identity, no
-weights) for a future learned projection.
-
-Future architecture (**not implemented**):
-
-```
-Text + VoiceConditioning → Future Voice Model → Future Speech Representation → Future Vocoder → Audio
-```
+| 1 | Audio dataset + inspection | ✅ |
+| 2 | Waveform, spectrogram, Mel spectrogram, audio features | ✅ |
+| 3 | Speaker embeddings (untrained encoder) | ✅ demo |
+| 4 | Speaker verification | ✅ demo |
+| 5 | Voice Registry | ✅ |
+| 6 | Multi-voice engine core | ✅ |
+| 7 | Voice conditioning | ✅ |
+| 8 | Production architecture (config, logging, interfaces, health, single notebook) | ✅ |
 
 ## Project structure
 
 ```
 Voice_engine/
-├── dataset/                     # PRIVATE recordings (git-ignored) — see dataset/README.md
-├── src/audio/
-│   ├── loader.py                # find + load + preprocess (mono, 16 kHz) WAV files
-│   ├── inspect.py               # measure a recording and check for problems
-│   └── features.py              # STFT, Mel filter bank, RMS, ZCR, spectral centroid
-├── src/models/speaker_encoder.py          # small PyTorch SpeakerEncoder (Phase 3)
-├── src/embeddings/generate_embeddings.py  # WAV -> Mel -> encoder -> L2-normalized .npy
-├── src/similarity/cosine.py               # cosine similarity
-├── src/verification/verifier.py          # SpeakerVerifier: embed, compare, threshold (Phase 4)
-├── src/voice_registry/                   # VoiceProfile + VoiceRegistry (Phase 5)
-├── src/engine/                           # VoiceEngine, VoiceRequest, SelectedVoice (Phase 6)
-├── src/conditioning/                     # VoiceConditioner, VoiceConditioning (Phase 7)
-├── src/visualization/plots.py   # waveform / spectrogram / Mel / PCA plots (matplotlib)
-├── scripts/inspect_dataset.py   # Phase 1 entry point
-├── scripts/analyze_audio.py     # Phase 2 entry point
-├── scripts/generate_speaker_embeddings.py   # Phase 3 entry point
-├── scripts/verify_speaker.py    # Phase 4: compare two WAV files
-├── scripts/evaluate_pairs.py    # Phase 4: score all genuine / impostor pairs
-├── scripts/register_voice.py, list_voices.py, get_voice.py,
-│   update_voice.py, remove_voice.py, demo_voice_registry.py   # Phase 5
-├── scripts/demo_voice_engine.py # Phase 6 demo
-├── scripts/demo_conditioning.py # Phase 7 demo
-├── tests/                       # unit tests (Phase 5 registry, Phase 6 engine, Phase 7 conditioning)
-├── voice_profiles.example.json  # example registry (fake data, committed)
-├── voice_profiles.json          # your real registry (PRIVATE, git-ignored)
-├── notebooks/01_audio_inspection.ipynb   # Colab: Phase 1
-├── notebooks/02_audio_analysis.ipynb     # Colab: Phase 2
-├── notebooks/03_speaker_embeddings.ipynb # Colab: Phase 3
-├── notebooks/04_speaker_verification.ipynb # Colab: Phase 4
-├── embeddings/                  # generated .npy embeddings (PRIVATE, git-ignored)
-├── outputs/                     # generated plots + CSV (git-ignored)
-├── requirements.txt
+├── dataset/README.md            # your recordings go in dataset/<speaker>/ (PRIVATE, git-ignored)
+├── src/
+│   ├── config/settings.py       # SAMPLE_RATE, EMBEDDING_DIMENSION, DEFAULT_LANGUAGE, paths, ...
+│   ├── utils/                   # logging.py, synthetic.py (fake audio/embeddings for tests & demos)
+│   ├── audio/                   # loader.py, inspect.py, features.py
+│   ├── visualization/plots.py   # waveform / spectrogram / Mel / PCA / pair-score plots
+│   ├── models/speaker_encoder.py
+│   ├── embeddings/generate_embeddings.py
+│   ├── similarity/cosine.py
+│   ├── verification/verifier.py
+│   ├── voice_registry/          # profile.py (VoiceProfile), registry.py (VoiceRegistry)
+│   ├── engine/                  # voice_engine.py, request.py, interfaces.py, exceptions.py
+│   └── conditioning/            # conditioner.py, representation.py
+├── scripts/                     # command-line tools and demos (see below)
+├── tests/                       # unit tests — synthetic data only
+├── notebooks/voice_engine.ipynb # the ONE educational notebook (all phases)
+├── voice_profiles.example.json  # example registry with fake data
+├── requirements.txt             # torch, numpy, soundfile, scipy, matplotlib
 └── .gitignore
 ```
 
-## Run locally (Windows, PowerShell)
+## Installation
+
+**Windows (CPU)** — Python 3.10 or newer:
 
 ```powershell
-python --version                      # 3.10 or newer
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1          # cmd.exe: .venv\Scripts\activate.bat
-python -m pip install --upgrade pip
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-Put your recordings in `dataset/speaker_01/` (`audio_001.wav`, `audio_002.wav`, `audio_003.wav`), then:
+**Google Colab:** open the notebook (below) — its first cell clones the repository and installs the requirements.
+No GPU is required anywhere; PyTorch uses CUDA automatically when available, otherwise the CPU.
+
+## How to run the tests
 
 ```powershell
-python scripts/inspect_dataset.py
-python scripts/inspect_dataset.py --convert     # optional: write mono 16 kHz copies to dataset_16k/
-
-# Phase 2
-python scripts/analyze_audio.py                 # all files in dataset/speaker_01 -> outputs/phase2/
-python scripts/analyze_audio.py --file dataset/speaker_01/audio_002.wav
-python scripts/analyze_audio.py --show          # also open the plots in windows
-
-# Phase 3
-python scripts/generate_speaker_embeddings.py   # -> embeddings/speaker_01/*.npy, outputs/phase3/embeddings_pca.png
-python scripts/generate_speaker_embeddings.py --seed 1 --frames 300
-
-# Phase 4
-python scripts/verify_speaker.py dataset/speaker_01/audio_001.wav dataset/speaker_01/audio_002.wav
-python scripts/verify_speaker.py dataset/speaker_01/audio_002.wav dataset/speaker_01/audio_003.wav --threshold 0.9
-python scripts/evaluate_pairs.py                # table + outputs/phase4/pair_scores.png
-
-# Phase 5
-python scripts/demo_voice_registry.py           # full demo with fake data in a temp folder
-python scripts/register_voice.py --voice-id voice_001 --name "Arjun" --gender male --languages en hi --embedding embeddings/speaker_01/audio_001.npy
-python scripts/list_voices.py                   # or: --language hi / --gender female
-python scripts/get_voice.py --voice-id voice_001
-python scripts/update_voice.py --voice-id voice_001 --name "Arjun Kumar"
-python scripts/remove_voice.py --voice-id voice_001
-python -m unittest discover -s tests -v         # run the tests
-
-# Phase 6
-python scripts/demo_voice_engine.py             # fake voices in a temp folder
-python scripts/demo_voice_engine.py --registry voice_profiles.json   # your real registry (read-only)
-
-# Phase 7
-python scripts/demo_conditioning.py
-python scripts/demo_conditioning.py --registry voice_profiles.json
+python -m unittest discover -s tests -v
 ```
 
-## Run on Google Colab
+Covers audio utilities, embeddings/verification, the registry, the engine, conditioning and the Phase 8
+architecture (settings, logging, provider interface, health check). Tests use temporary folders and synthetic
+data — no personal recordings needed.
 
-Open `notebooks/01_audio_inspection.ipynb` (Phase 1) , `02_audio_analysis.ipynb` (Phase 2), `03_speaker_embeddings.ipynb` (Phase 3) or `04_speaker_verification.ipynb` (Phase 4) in Colab
-(File → Open notebook → GitHub → `8919134556/Voice_engine`) and run the cells top to bottom. No GPU is needed for Phases 1–7; Phases 3–4 use CUDA automatically if one is available. Phases 5–7 are pure Python/NumPy.
-Your recordings are read from private Google Drive (`MyDrive/voice_engine/dataset/`) or uploaded for the session.
+## How to run the demos
 
-## Data privacy
+```powershell
+python scripts/demo_architecture.py        # Phase 8: full pipeline on synthetic audio, with logging
+python scripts/demo_voice_registry.py      # Phase 5
+python scripts/demo_voice_engine.py        # Phase 6
+python scripts/demo_conditioning.py        # Phase 7
+```
+
+Working with your own recordings (`dataset/speaker_01/*.wav`):
+
+```powershell
+python scripts/inspect_dataset.py                          # Phase 1: check the WAV files
+python scripts/analyze_audio.py                            # Phase 2: plots + features CSV -> outputs/
+python scripts/generate_speaker_embeddings.py              # Phase 3: -> embeddings/speaker_01/*.npy
+python scripts/verify_speaker.py dataset/speaker_01/audio_001.wav dataset/speaker_01/audio_002.wav
+python scripts/evaluate_pairs.py                           # Phase 4: all pairs, FAR/FRR
+python scripts/register_voice.py --voice-id voice_001 --name "My Voice" --languages en hi `
+    --embedding embeddings/speaker_01/audio_001.npy embeddings/speaker_01/audio_002.npy embeddings/speaker_01/audio_003.npy
+python scripts/list_voices.py
+python scripts/get_voice.py --voice-id voice_001
+python scripts/update_voice.py --voice-id voice_001 --name "New Name"
+python scripts/remove_voice.py --voice-id voice_001
+python scripts/demo_voice_engine.py --registry voice_profiles.json
+```
+
+## How to open the notebook
+
+- **Locally:** `pip install jupyter`, then `jupyter notebook notebooks/voice_engine.ipynb` (or open it in VS Code).
+- **Colab:** File → Open notebook → GitHub → `8919134556/Voice_engine` → `notebooks/voice_engine.ipynb`.
+
+Sections: Project Overview · Audio Inspection · Waveform and Spectrogram · Audio Features · Speaker Embedding ·
+Speaker Verification · Voice Registry · Multi-Voice Engine · Voice Conditioning · Production Architecture ·
+End-to-End Demo. If no recordings are found, the notebook generates **synthetic** audio, so every section runs.
+
+## Privacy rules
 
 Voice recordings are personal data, and speaker embeddings are **derived biometric data**.
-`*.wav`, `dataset/` contents, `embeddings/`, `*.npy`, `voice_profiles.json` and model weights (`*.pt`) are git-ignored,
-so only code is pushed to GitHub. See [dataset/README.md](dataset/README.md).
+
+- Never committed (see `.gitignore`): `*.wav`, `*.mp3`, `*.flac`, `*.m4a`, `*.ogg`, `*.npy`, `*.npz`,
+  `embeddings/`, the contents of `dataset/`, `voice_profiles.json`, model weights (`*.pt`, `*.pth`), `outputs/`.
+- Keep recordings locally or in private storage (e.g. private Google Drive). See `dataset/README.md`.
+- Tests, demos and the notebook use synthetic data and temporary folders.
+- Logs contain voice ids and shapes only — never audio samples or embedding values.
+- Only register voices of people who have consented.
+
+## Production Readiness
+
+This is a learning project with a clean architecture — **it is not production-ready.**
+
+| Area | Status |
+|---|---|
+| Architecture separation | ✅ |
+| Voice registry | ✅ |
+| Voice selection | ✅ |
+| Embedding management | ✅ |
+| Conditioning interface | ✅ |
+| Testing | ✅ |
+| Production speaker model (trained encoder) | ❌ |
+| Large multi-speaker training | ❌ |
+| Real-time inference | ❌ |
+| TTS | ❌ |
+| Voice cloning | ❌ |
+| Authentication security | ❌ |
+| Anti-spoofing | ❌ |
+| Distributed deployment | ❌ |

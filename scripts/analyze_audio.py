@@ -5,7 +5,7 @@ Usage (run from the project root):
     python scripts/analyze_audio.py                                   # all files in dataset/speaker_01
     python scripts/analyze_audio.py --file dataset/speaker_01/audio_002.wav
     python scripts/analyze_audio.py --speaker speaker_02
-    python scripts/analyze_audio.py --dataset /content/drive/MyDrive/voice_engine/dataset
+    python scripts/analyze_audio.py --dataset <path-to-your-private-dataset>
     python scripts/analyze_audio.py --show                            # also open plot windows
 
 Output (default folder: outputs/phase2/):

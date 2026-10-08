@@ -13,10 +13,9 @@ Windows and Colab.
 
 import torch
 
-# Standard settings for 16 kHz speech:
-N_FFT = 400        # window length: 400 samples = 25 ms at 16 kHz
-HOP_LENGTH = 160   # step between windows: 160 samples = 10 ms -> 100 frames per second
-N_MELS = 80        # number of Mel bands (80 is the usual choice for speech models)
+# Standard settings for 16 kHz speech (values live in src/config/settings.py):
+#   N_FFT = 400 samples = 25 ms window, HOP_LENGTH = 160 samples = 10 ms step, N_MELS = 80 bands
+from src.config.settings import HOP_LENGTH, N_FFT, N_MELS
 
 
 # ---------------------------------------------------------------------------
