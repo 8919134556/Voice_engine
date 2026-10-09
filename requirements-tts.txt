@@ -1,0 +1,3 @@
+# Step 2 — voice cloning (XTTS-v2). Use a GPU runtime (Google Colab T4).
+# PyTorch and torchaudio are preinstalled on Colab; coqui-tts does not install PyTorch itself.
+coqui-tts
