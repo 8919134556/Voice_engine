@@ -1,63 +1,28 @@
-# dataset/ — private voice recordings
+# dataset/ — your private voice recordings
 
-> **The WAV recordings in this folder contain personal voice data.**
-> **Do NOT commit them to a public GitHub repository.**
+> **These WAV files are personal voice data. They are never committed to GitHub** (see `.gitignore`).
+> With enough of someone's audio their voice can be cloned, so keep this folder private.
 
-A voice recording is biometric data: with enough of it, someone could clone your voice.
-This repository holds the **code**; the **recordings** stay private.
-
-## Expected layout
+## Layout
 
 ```
 dataset/
-├── README.md          <- this file (the ONLY thing in dataset/ that is committed)
-├── speaker_01/
-│   ├── audio_001.wav
-│   ├── audio_002.wav
-│   └── audio_003.wav
-├── speaker_02/        <- added in later phases
-└── ...
+├── README.md          <- the only file here that goes to GitHub
+└── speaker_01/        <- one folder per voice (your voice)
+    ├── audio_001.wav
+    ├── audio_002.wav
+    └── ...
 ```
 
-- One folder per speaker (`speaker_01`, `speaker_02`, ...).
-- Ideal format: **WAV, mono, 16 kHz**, 3–15 seconds of clear speech per file.
-  Other formats (stereo, 44.1/48 kHz) are fine — `scripts/inspect_dataset.py --convert`
-  writes mono 16 kHz copies to `dataset_16k/`.
+Later voices go in `speaker_02/`, `speaker_03/`, … (only with the person's consent).
 
-## Where to keep the recordings
+## Good recordings for voice cloning
 
-- **Locally** in this folder (they are git-ignored automatically)
-- **Private Google Drive** — e.g. `MyDrive/voice_engine/dataset/` (used by the Colab notebook)
-- A **private** GitHub repository
-- Any other private storage
+- Quiet room, same microphone, normal speaking voice.
+- 3–15 seconds per clip; more clips = better (aim for 5–10+ minutes in total over time).
+- Any sample rate / mono or stereo is fine — Step 1 converts everything.
 
-If the dataset is somewhere else, point the script at it:
+## Where to keep them
 
-```
-python scripts/inspect_dataset.py --dataset "D:\my_private_audio\dataset"
-```
-
-## How the protection works
-
-`.gitignore` contains:
-
-```
-*.wav            # never commit audio files anywhere in the repo
-dataset/*        # ignore everything in dataset/ ...
-!dataset/README.md   # ... except this README
-```
-
-Check before every commit — no `.wav` file should appear here:
-
-```
-git status
-```
-
-## Intentionally committing a test file (later)
-
-If you ever want to commit a small, **non-personal** test file (e.g. a synthetic beep for automated tests):
-
-- One-off: force-add it — `git add -f tests/fixtures/beep.wav`
-- Permanently: add an exception line to `.gitignore`, e.g. `!tests/fixtures/*.wav`
-
-Never do this for real voice recordings in a public repository.
+- On your computer (this folder) — git-ignored.
+- In your private Google Drive, for Colab (copy them in with the notebook's Step 1a).

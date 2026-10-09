@@ -8,33 +8,21 @@
 *.m4a
 *.ogg
 
-# Ignore everything inside dataset/ except its README
+# Your recordings: everything inside dataset/ except its README
 dataset/*
 !dataset/README.md
 
-# Speaker embeddings are DERIVED BIOMETRIC DATA — keep them private too
-# (leading "/" = only the top-level folder, NOT src/embeddings/ which is code)
-/embeddings/
-*.npy
-*.npz
-# The real voice registry contains names/descriptions of real people and links to their
-# embeddings -> private. voice_profiles.example.json (fake data) IS committed as documentation.
-voice_profiles.json
-voice_profiles.json.tmp
-# Model weights trained on personal voices (later phases)
-*.pt
-*.pth
-
-# Converted copies produced by `inspect_dataset.py --convert`
-/dataset_16k/
-
-# Generated analysis output (plots, CSV) — recreate any time with scripts/analyze_audio.py
+# Cleaned recordings (Step 1), generated speech and reports
+/dataset_clean/
 /outputs/
 
-# To intentionally commit a test file later, force-add it:
-#   git add -f tests/fixtures/beep.wav
-# or add an exception line below, e.g.:
-#   !tests/fixtures/*.wav
+# Voice data derived from your recordings (embeddings, voice lists) and model files
+*.npy
+*.npz
+*.pt
+*.pth
+*.ckpt
+voices.json
 
 # ------------------------------------------------------------
 # Python / tooling
