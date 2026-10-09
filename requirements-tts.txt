@@ -1,3 +1,6 @@
 # Step 2 — voice cloning (XTTS-v2). Use a GPU runtime (Google Colab T4).
 # PyTorch and torchaudio are preinstalled on Colab; coqui-tts does not install PyTorch itself.
 coqui-tts
+# transformers 5 removed a function coqui-tts still uses (isin_mps_friendly) -> stay on 4.x
+# https://github.com/idiap/coqui-ai-TTS/issues/558
+transformers>=4.57,<5
