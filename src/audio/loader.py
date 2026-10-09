@@ -46,8 +46,11 @@ def find_dataset_dir(dataset_dir=None):
 
 
 def list_speakers(dataset_dir):
-    """Return every sub-folder of the dataset (one folder = one speaker), sorted by name."""
-    return sorted(p for p in Path(dataset_dir).iterdir() if p.is_dir())
+    """
+    Return every sub-folder of the dataset (one folder = one speaker), sorted by name.
+    Hidden folders such as ".ipynb_checkpoints" (created by Jupyter/Colab) are skipped.
+    """
+    return sorted(p for p in Path(dataset_dir).iterdir() if p.is_dir() and not p.name.startswith("."))
 
 
 def list_audio_files(speaker_dir):

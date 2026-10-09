@@ -65,6 +65,12 @@ class TestLoader(AudioTestCase):
         out, sr = preprocess_audio(w, SAMPLE_RATE)
         self.assertTrue(torch.equal(out, w))
 
+    def test_list_speakers_skips_hidden_folders(self):
+        from src.audio.loader import list_speakers
+        write_synthetic_dataset(self.root / "ds", files_per_speaker=1)
+        (self.root / "ds" / ".ipynb_checkpoints").mkdir()                   # created by Jupyter/Colab
+        self.assertEqual([p.name for p in list_speakers(self.root / "ds")], ["speaker_01"])
+
     def test_list_audio_files_sorted_wav_only(self):
         write_synthetic_dataset(self.root / "ds", files_per_speaker=3)
         (self.root / "ds" / "speaker_01" / "notes.txt").write_text("x")

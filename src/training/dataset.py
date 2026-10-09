@@ -45,7 +45,8 @@ def discover_speakers(dataset_dir: str | Path) -> dict[str, int]:
     dataset_dir = Path(dataset_dir)
     if not dataset_dir.is_dir():
         raise FileNotFoundError(f"Dataset folder not found: {dataset_dir}")
-    speakers = sorted(p.name for p in dataset_dir.iterdir() if p.is_dir() and list_audio_files(p))
+    speakers = sorted(p.name for p in dataset_dir.iterdir()
+                      if p.is_dir() and not p.name.startswith(".") and list_audio_files(p))
     return {name: label for label, name in enumerate(speakers)}
 
 
